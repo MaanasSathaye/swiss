@@ -49,8 +49,7 @@ func (sc *ServerConfig) Addr() string {
 	return fmt.Sprintf("%s:%d", sc.Host, sc.Port)
 }
 
-// TODO I don't know what to call this thing...
-type SSRetriever interface {
+type ServerFuncs interface {
 	GetId(string) *ServerConfig
 	GetAllGameServerConfigs() ([]ServerConfig, error)
 	Run(ctx context.Context)
