@@ -1,6 +1,9 @@
 package requests_test
 
 import (
+	"context"
+	"time"
+
 	"github.com/MaanasSathaye/swiss/requests"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -9,8 +12,10 @@ import (
 var _ = Describe("Requests", func() {
 	Describe("NewConstantRequest", func() {
 		It("should generate a constant size request", func() {
-			url := "https://localhost:4001"
-			req := requests.NewConstantRequest(url)
+			ctx, done := context.WithTimeout(context.Background(), 100*time.Millisecond)
+			defer done()
+			req, err := requests.NewConstantRequest(ctx, "http://example.com/")
+			Expect(err).To(BeNil())
 			Expect(req).NotTo(BeNil()) // Check if request is not nil
 
 		})
@@ -21,10 +26,11 @@ var _ = Describe("Requests", func() {
 			var (
 				sizes []int64
 			)
-			url := "https://localhost:4001"
-
+			ctx, done := context.WithTimeout(context.Background(), 100*time.Millisecond)
+			defer done()
 			for i := 0; i < 100; i++ {
-				req := requests.NewVariableRequest(url)
+				req, err := requests.NewConstantRequest(ctx, "http://example.com/")
+				Expect(err).To(BeNil())
 				Expect(req).NotTo(BeNil())
 				sizes = append(sizes, req.ContentLength)
 			}
