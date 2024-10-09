@@ -50,7 +50,7 @@ func (sc *ServerConfig) Addr() string {
 }
 
 // TODO I don't know what to call this thing...
-type GSSRetriever interface {
+type SSRetriever interface {
 	GetId(string) *ServerConfig
 	GetAllGameServerConfigs() ([]ServerConfig, error)
 	Run(ctx context.Context)
