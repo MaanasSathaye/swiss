@@ -2,27 +2,28 @@ package requests
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"math/rand"
 	"net/http"
 )
 
-func NewConstantRequest(url string) *http.Request {
+func NewConstantRequest(ctx context.Context, url string) (*http.Request, error) {
 	var (
 		err error
 		req *http.Request
 	)
 	b := make([]byte, 1024*1024)
 
-	if req, err = http.NewRequest("GET", url, bytes.NewReader(b)); err != nil {
+	if req, err = http.NewRequestWithContext(ctx, "GET", url, bytes.NewReader(b)); err != nil {
 		fmt.Println(err, "unable to generate constant request")
 	}
 	req.Header.Set("User-Agent", "MyConstantAgent")
 	req.Header.Set("Content-Type", "application/json")
-	return req
+	return req, nil
 }
 
-func NewVariableRequest(url string) *http.Request {
+func NewVariableRequest(ctx context.Context, url string) (*http.Request, error) {
 	var (
 		err error
 		req *http.Request
@@ -36,10 +37,10 @@ func NewVariableRequest(url string) *http.Request {
 
 	b := make([]byte, randomSize)
 
-	if req, err = http.NewRequest("GET", url, bytes.NewReader(b)); err != nil {
+	if req, err = http.NewRequestWithContext(ctx, "GET", url, bytes.NewReader(b)); err != nil {
 		fmt.Println(err, "unable to generate constant request")
 	}
 	req.Header.Set("User-Agent", "MyVariableAgent")
 	req.Header.Set("Content-Type", "application/json")
-	return req
+	return req, nil
 }
