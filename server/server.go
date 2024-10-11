@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/http"
 	"sync"
 
 	"github.com/MaanasSathaye/swiss/stats"
@@ -14,8 +15,8 @@ type Server struct {
 	statusChan chan struct{}
 	helpers    stats.ServerFuncs
 	Stats      stats.ServerConfig
-	// listener   net.Listener
-	mutex sync.Mutex
+	mux        *http.ServeMux
+	mutex      sync.Mutex
 }
 
 func NewServer(helpers stats.ServerFuncs, stats stats.ServerConfig) (ns *Server, err error) {
@@ -24,6 +25,7 @@ func NewServer(helpers stats.ServerFuncs, stats stats.ServerConfig) (ns *Server,
 		helpers:    helpers,
 		alive:      false,
 		statusChan: make(chan struct{}, 1),
+		mux:        http.NewServeMux(),
 		mutex:      sync.Mutex{},
 	}, nil
 }
@@ -37,43 +39,37 @@ func (s *Server) Start() error {
 	s.alive = true
 	s.mutex.Unlock()
 
-	go func() {
-		lis, err := net.Listen("tcp", s.Stats.Addr())
-		if err != nil {
-			log.Fatalf("failed to listen: %v", err)
-		}
-		defer lis.Close()
+	lis, err := net.Listen("tcp", s.Stats.Addr())
+	if err != nil {
+		log.Fatalf("failed to listen: %v", err)
+		return err
+	}
 
-		for s.alive {
-			conn, err := lis.Accept()
-			if err != nil {
-				log.Printf("failed to accept connection: %v", err)
-				continue
-			}
-			s.mutex.Lock()
-			s.Stats.Connections++
-			s.Stats.ConnectionsAdded++
-			s.mutex.Unlock()
-			go s.handleConnection(conn)
+	s.mux.HandleFunc("/", s.handleConnections)
+
+	go func() {
+		log.Printf("HTTP server is listening on %s\n", s.Stats.Addr())
+		if err := http.Serve(lis, s.mux); err != nil && s.alive {
+			log.Printf("HTTP server error: %v", err)
 		}
 	}()
 
 	return nil
 }
 
-func (s *Server) handleConnection(conn net.Conn) {
-	defer conn.Close()
-	buffer := make([]byte, 1024)
-	for {
-		_, err := conn.Read(buffer)
-		if err != nil {
-			s.mutex.Lock()
-			s.Stats.Connections--
-			s.Stats.ConnectionsRemoved++
-			s.mutex.Unlock()
-			return
-		}
-	}
+func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
+	log.Printf("Received request at %s from %s\n", s.Stats.Addr(), r.RemoteAddr)
+	s.mutex.Lock()
+	s.Stats.Connections++
+	s.Stats.ConnectionsAdded++
+	s.mutex.Unlock()
+
+	defer func() {
+		s.mutex.Lock()
+		s.Stats.Connections--
+		s.Stats.ConnectionsRemoved++
+		s.mutex.Unlock()
+	}()
 }
 
 func (s *Server) Stop() {

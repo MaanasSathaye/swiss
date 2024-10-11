@@ -34,8 +34,6 @@ func main() {
 	go func() {
 		time.Sleep(1 * time.Second)
 
-		log.Println("Connections before request:", server.Stats.Connections)
-
 		url := fmt.Sprintf("http://%s:%d", host, port)
 		resp, err := http.Get(url)
 		if err != nil {
@@ -44,12 +42,8 @@ func main() {
 		defer resp.Body.Close()
 
 		log.Println("Response from server:", resp.Status)
-		log.Println("Connections after request:", server.Stats.Connections)
 	}()
-
-	time.Sleep(5 * time.Second)
+	time.Sleep(3 * time.Second)
 	server.Stop()
 	log.Printf("Server stopped. Final server stats: %v", server.Stats)
 }
-
-//Todo actually make a request here
