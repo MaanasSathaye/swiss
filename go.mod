@@ -5,6 +5,7 @@ go 1.22.2
 require github.com/onsi/ginkgo/v2 v2.20.2
 
 require (
+	github.com/gofrs/uuid/v5 v5.3.0
 	github.com/google/go-cmp v0.6.0 // indirect
 	golang.org/x/text v0.19.0 // indirect
 	google.golang.org/protobuf v1.35.1 // indirect

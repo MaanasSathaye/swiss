@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/MaanasSathaye/swiss/stats"
+	"github.com/gofrs/uuid/v5"
 )
 
 type Server struct {
@@ -70,6 +71,13 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 		s.Stats.ConnectionsRemoved++
 		s.mutex.Unlock()
 	}()
+
+	resp, err := uuid.NewV4()
+	if err != nil {
+		http.Error(w, "Error generating UUID", http.StatusInternalServerError)
+		return
+	}
+	w.Write([]byte(resp.String()))
 }
 
 func (s *Server) Stop() {
@@ -77,4 +85,29 @@ func (s *Server) Stop() {
 	s.alive = false
 	close(s.statusChan)
 	s.mutex.Unlock()
+}
+
+// https://github.com/phayes/freeport/blob/master/freeport.go
+// GetFreePort asks the kernel for a free open port that is ready to use.
+func GetFreePort() (int, error) {
+	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
+	if err != nil {
+		return 0, err
+	}
+
+	l, err := net.ListenTCP("tcp", addr)
+	if err != nil {
+		return 0, err
+	}
+	defer l.Close()
+	return l.Addr().(*net.TCPAddr).Port, nil
+}
+
+func GetHostAndPort() (string, int) {
+
+	port, err := GetFreePort()
+	if err != nil {
+		port = 0
+	}
+	return "0.0.0.0", port
 }

@@ -51,7 +51,7 @@ func (sc *ServerConfig) Addr() string {
 
 type ServerFuncs interface {
 	GetId(string) *ServerConfig
-	GetAllGameServerConfigs() ([]ServerConfig, error)
+	GetAllServerConfigs() ([]ServerConfig, error)
 	Run(ctx context.Context)
 	GetServersByUtilization(maxLoad float64) []ServerConfig
 	Update(stats ServerConfig) error
