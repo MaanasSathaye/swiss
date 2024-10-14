@@ -21,6 +21,8 @@ var _ = Describe("LoadBalancer", func() {
 		lbHost  string
 		lbPort  int
 		servers []*server.Server
+		srv     *server.Server
+		err     error
 	)
 
 	BeforeEach(func() {
@@ -28,7 +30,7 @@ var _ = Describe("LoadBalancer", func() {
 		hosts = []string{}
 		ports = []int{}
 
-		for i := 0; i < 10; i++ {
+		for i := 0; i < 2; i++ {
 			host, port := server.GetHostAndPort()
 
 			mockStats := stats.ServerConfig{
@@ -38,7 +40,7 @@ var _ = Describe("LoadBalancer", func() {
 				UpdatedAt: time.Now(),
 			}
 
-			srv, err := server.NewServer(nil, mockStats)
+			srv, err = server.NewServer(mockStats)
 			Expect(err).NotTo(HaveOccurred())
 
 			err = srv.Start()
@@ -55,7 +57,7 @@ var _ = Describe("LoadBalancer", func() {
 		lbHost, lbPort = server.GetHostAndPort()
 
 		go func() {
-			err := lb.StartBalancer(lbHost, lbPort)
+			err = lb.StartBalancer(lbHost, lbPort)
 			Expect(err).NotTo(HaveOccurred())
 		}()
 

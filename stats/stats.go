@@ -1,7 +1,6 @@
 package stats
 
 import (
-	"context"
 	"fmt"
 	"time"
 )
@@ -47,14 +46,4 @@ func (sc *ServerConfig) String() string {
 
 func (sc *ServerConfig) Addr() string {
 	return fmt.Sprintf("%s:%d", sc.Host, sc.Port)
-}
-
-type ServerFuncs interface {
-	GetId(string) *ServerConfig
-	GetAllServerConfigs() ([]ServerConfig, error)
-	Run(ctx context.Context)
-	GetServersByUtilization(maxLoad float64) []ServerConfig
-	Update(stats ServerConfig) error
-	GetServerCount() int
-	GetTotalConnectionCount() ConnectionStats
 }

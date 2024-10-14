@@ -44,7 +44,7 @@ var _ = Describe("Server", func() {
 			Load:      0.0,
 		}
 
-		srv, err = server.NewServer(nil, mockStats)
+		srv, err = server.NewServer(mockStats)
 		Expect(err).NotTo(HaveOccurred())
 
 		err = srv.Start()
@@ -105,7 +105,7 @@ var _ = Describe("Multiple Servers", func() {
 				Load:      0.0,
 			}
 
-			srv, err := server.NewServer(nil, mockStats)
+			srv, err := server.NewServer(mockStats)
 			Expect(err).NotTo(HaveOccurred())
 
 			err = srv.Start()

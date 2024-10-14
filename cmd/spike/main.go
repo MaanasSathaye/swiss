@@ -20,7 +20,7 @@ func main() {
 		Load:      0.0,
 	}
 
-	server, err := server.NewServer(nil, mockStats)
+	server, err := server.NewServer(mockStats)
 	if err != nil {
 		log.Fatalf("Failed to create server: %v", err)
 	}

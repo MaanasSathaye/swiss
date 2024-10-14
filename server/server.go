@@ -14,16 +14,15 @@ import (
 type Server struct {
 	alive      bool
 	statusChan chan struct{}
-	helpers    stats.ServerFuncs
-	Stats      stats.ServerConfig
-	mux        *http.ServeMux
-	mutex      sync.Mutex
+	// helpers    stats.ServerFuncs
+	Stats stats.ServerConfig
+	mux   *http.ServeMux
+	mutex sync.Mutex
 }
 
-func NewServer(helpers stats.ServerFuncs, stats stats.ServerConfig) (ns *Server, err error) {
+func NewServer(stats stats.ServerConfig) (ns *Server, err error) {
 	return &Server{
 		Stats:      stats,
-		helpers:    helpers,
 		alive:      false,
 		statusChan: make(chan struct{}, 1),
 		mux:        http.NewServeMux(),
@@ -59,7 +58,6 @@ func (s *Server) Start() error {
 }
 
 func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
-	log.Printf("Received request at %s from %s\n", s.Stats.Addr(), r.RemoteAddr)
 	s.mutex.Lock()
 	s.Stats.Connections++
 	s.Stats.ConnectionsAdded++
