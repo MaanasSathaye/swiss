@@ -7,79 +7,53 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"sort"
 	"sync"
 
-	"github.com/MaanasSathaye/swiss/stats"
+	"github.com/MaanasSathaye/swiss/server"
 )
 
 type LeastConnectionsLoadBalancer struct {
-	servers []stats.ServerConfig
+	servers []*server.Server
 	mutex   sync.Mutex
 }
 
 func NewLeastConnectionsLoadBalancer() *LeastConnectionsLoadBalancer {
 	return &LeastConnectionsLoadBalancer{
-		servers: []stats.ServerConfig{},
+		servers: []*server.Server{},
 	}
 }
 
-func (lb *LeastConnectionsLoadBalancer) AddServer(host string, port int) error {
-	serverID, err := url.Parse(fmt.Sprintf("http://%s:%d", host, port))
-	if err != nil {
-		return err
-	}
-	serverConfig := stats.ServerConfig{
-		Id:   serverID.String(),
-		Host: host,
-		Port: port,
-	}
-	lb.mutex.Lock()
-	defer lb.mutex.Unlock()
-	lb.servers = append(lb.servers, serverConfig)
+func (lb *LeastConnectionsLoadBalancer) AddServer(srv *server.Server) error {
+	lb.servers = append(lb.servers, srv)
 	return nil
 }
 
 func (lb *LeastConnectionsLoadBalancer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var (
-		leastConnectionsServers []*stats.ServerConfig
-		chosenServer            *stats.ServerConfig
+		leastConnServers []*server.Server
+		chosenServer     *server.Server
+		minConnections   = -1
 	)
 
 	lb.mutex.Lock()
-	minConnections := -1
-
-	// Sort servers by connections (ascending order)
-	sort.Slice(lb.servers, func(i, j int) bool {
-		return lb.servers[i].Connections < lb.servers[j].Connections
-	})
-
-	// Find servers with the least connections
-	for _, server := range lb.servers {
-		if minConnections == -1 || server.Connections == minConnections {
-			leastConnectionsServers = append(leastConnectionsServers, &server)
-			minConnections = server.Connections
-		} else {
-			break // All remaining servers have more connections
+	defer lb.mutex.Unlock()
+	for i, srv := range lb.servers {
+		if i == 0 || srv.Stats.Connections < minConnections {
+			leastConnServers = []*server.Server{srv}
+			minConnections = srv.Stats.Connections
+		} else if srv.Stats.Connections == minConnections {
+			leastConnServers = append(leastConnServers, srv)
 		}
 	}
 
-	if leastConnectionsServers == nil {
-		http.Error(w, "No available servers", http.StatusServiceUnavailable)
-		lb.mutex.Unlock()
-		return
-	}
+	chosenServer = leastConnServers[rand.Intn(len(leastConnServers))]
+	chosenServer.Stats.Connections++
 
-	// Choose a random server from servers with the least connections
-	randomIndex := rand.Intn(len(leastConnectionsServers))
-	chosenServer = leastConnectionsServers[randomIndex]
-
-	chosenServer.Connections++
 	defer func() {
-		chosenServer.Connections--
+		chosenServer.Stats.Connections--
 	}()
 
-	serverAddr := fmt.Sprintf("%s:%d", chosenServer.Host, chosenServer.Port)
+	serverAddr := fmt.Sprintf("%s:%d", chosenServer.Stats.Host, chosenServer.Stats.Port)
 	targetURL := &url.URL{
 		Scheme: "http",
 		Host:   serverAddr,
@@ -88,7 +62,6 @@ func (lb *LeastConnectionsLoadBalancer) ServeHTTP(w http.ResponseWriter, r *http
 	proxy := httputil.NewSingleHostReverseProxy(targetURL)
 	log.Printf("Forwarding request to server: %s", targetURL.String())
 	proxy.ServeHTTP(w, r)
-	lb.mutex.Unlock()
 }
 
 func (lb *LeastConnectionsLoadBalancer) StartBalancer(host string, port int) error {
