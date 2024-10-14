@@ -3,9 +3,11 @@ package server
 import (
 	"fmt"
 	"log"
+	"math/rand"
 	"net"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/MaanasSathaye/swiss/stats"
 	"github.com/gofrs/uuid/v5"
@@ -75,6 +77,7 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Error generating UUID", http.StatusInternalServerError)
 		return
 	}
+	time.Sleep(time.Duration(rand.Intn(10)) * time.Second) //simulate work mainly so least connections simulates properly
 	w.Write([]byte(resp.String()))
 }
 
