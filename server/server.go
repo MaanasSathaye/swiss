@@ -3,29 +3,26 @@ package server
 import (
 	"fmt"
 	"log"
-	"math/rand"
 	"net"
 	"net/http"
 	"sync"
-	"time"
 
 	"github.com/MaanasSathaye/swiss/stats"
 	"github.com/gofrs/uuid/v5"
 )
 
 type Server struct {
-	alive      bool
+	Alive      bool
 	statusChan chan struct{}
-	// helpers    stats.ServerFuncs
-	Stats stats.ServerConfig
-	mux   *http.ServeMux
-	mutex sync.Mutex
+	Stats      stats.ServerConfig
+	mux        *http.ServeMux
+	mutex      sync.Mutex
 }
 
 func NewServer(stats stats.ServerConfig) (ns *Server, err error) {
 	return &Server{
 		Stats:      stats,
-		alive:      false,
+		Alive:      false,
 		statusChan: make(chan struct{}, 1),
 		mux:        http.NewServeMux(),
 		mutex:      sync.Mutex{},
@@ -34,11 +31,11 @@ func NewServer(stats stats.ServerConfig) (ns *Server, err error) {
 
 func (s *Server) Start() error {
 	s.mutex.Lock()
-	if s.alive {
+	if s.Alive {
 		s.mutex.Unlock()
 		return fmt.Errorf("server already running")
 	}
-	s.alive = true
+	s.Alive = true
 	s.mutex.Unlock()
 
 	lis, err := net.Listen("tcp", s.Stats.Addr())
@@ -51,7 +48,7 @@ func (s *Server) Start() error {
 
 	go func() {
 		log.Printf("HTTP server is listening on %s\n", s.Stats.Addr())
-		if err := http.Serve(lis, s.mux); err != nil && s.alive {
+		if err := http.Serve(lis, s.mux); err != nil && s.Alive {
 			log.Printf("HTTP server error: %v", err)
 		}
 	}()
@@ -77,13 +74,13 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Error generating UUID", http.StatusInternalServerError)
 		return
 	}
-	time.Sleep(time.Duration(rand.Intn(10)) * time.Second) //simulate work mainly so least connections simulates properly
+	// time.Sleep(time.Duration(rand.Intn(10)) * time.Second) //simulate work mainly so least connections simulates properly
 	w.Write([]byte(resp.String()))
 }
 
 func (s *Server) Stop() {
 	s.mutex.Lock()
-	s.alive = false
+	s.Alive = false
 	close(s.statusChan)
 	s.mutex.Unlock()
 }
