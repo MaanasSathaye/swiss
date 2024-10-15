@@ -62,7 +62,6 @@ func (lb *LeastConnectionsLoadBalancer) ServeHTTP(w http.ResponseWriter, r *http
 	}
 
 	proxy := httputil.NewSingleHostReverseProxy(targetURL)
-	log.Printf("Forwarding request to server: %s", targetURL.String())
 	proxy.ServeHTTP(w, r)
 }
 

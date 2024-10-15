@@ -16,7 +16,7 @@ type Server struct {
 	statusChan chan struct{}
 	Stats      stats.ServerConfig
 	mux        *http.ServeMux
-	mutex      sync.Mutex
+	Mutex      sync.Mutex
 }
 
 func NewServer(stats stats.ServerConfig) (ns *Server, err error) {
@@ -25,18 +25,18 @@ func NewServer(stats stats.ServerConfig) (ns *Server, err error) {
 		Alive:      false,
 		statusChan: make(chan struct{}, 1),
 		mux:        http.NewServeMux(),
-		mutex:      sync.Mutex{},
+		Mutex:      sync.Mutex{},
 	}, nil
 }
 
 func (s *Server) Start() error {
-	s.mutex.Lock()
+	s.Mutex.Lock()
 	if s.Alive {
-		s.mutex.Unlock()
+		s.Mutex.Unlock()
 		return fmt.Errorf("server already running")
 	}
 	s.Alive = true
-	s.mutex.Unlock()
+	s.Mutex.Unlock()
 
 	lis, err := net.Listen("tcp", s.Stats.Addr())
 	if err != nil {
@@ -57,16 +57,16 @@ func (s *Server) Start() error {
 }
 
 func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
-	s.mutex.Lock()
+	s.Mutex.Lock()
 	s.Stats.Connections++
 	s.Stats.ConnectionsAdded++
-	s.mutex.Unlock()
+	s.Mutex.Unlock()
 
 	defer func() {
-		s.mutex.Lock()
+		s.Mutex.Lock()
 		s.Stats.Connections--
 		s.Stats.ConnectionsRemoved++
-		s.mutex.Unlock()
+		s.Mutex.Unlock()
 	}()
 
 	resp, err := uuid.NewV4()
@@ -79,10 +79,10 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) Stop() {
-	s.mutex.Lock()
+	s.Mutex.Lock()
 	s.Alive = false
 	close(s.statusChan)
-	s.mutex.Unlock()
+	s.Mutex.Unlock()
 }
 
 // https://github.com/phayes/freeport/blob/master/freeport.go

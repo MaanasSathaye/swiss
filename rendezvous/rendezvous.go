@@ -3,7 +3,6 @@ package rendezvous
 import (
 	"crypto/md5"
 	"fmt"
-	"log"
 	"math/big"
 	"net/http"
 	"net/http/httputil"
@@ -56,7 +55,6 @@ func (lb *RendezvousLoadBalancer) ServeHTTP(w http.ResponseWriter, r *http.Reque
 	}
 
 	proxy := httputil.NewSingleHostReverseProxy(serverURL)
-	log.Printf("Forwarding request to server: %s", serverURL.String())
 	proxy.ServeHTTP(w, r)
 }
 
