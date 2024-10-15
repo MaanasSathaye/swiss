@@ -1,9 +1,10 @@
 package rendezvous
 
 import (
+	"crypto/md5"
 	"fmt"
-	"hash/fnv"
 	"log"
+	"math/big"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -36,13 +37,13 @@ func (lb *RendezvousLoadBalancer) ServeHTTP(w http.ResponseWriter, r *http.Reque
 
 	var (
 		chosenServer *server.Server
-		maxWeight    = uint32(0)
-		requestKey   = r.URL.Path
+		maxWeight    = big.NewInt(0)
+		requestKey   = []byte(r.URL.Path)
 	)
 
 	for _, srv := range lb.servers {
 		weight := lb.computeWeight(srv, requestKey)
-		if weight > maxWeight {
+		if weight.Cmp(maxWeight) == 1 {
 			maxWeight = weight
 			chosenServer = srv
 		}
@@ -59,12 +60,16 @@ func (lb *RendezvousLoadBalancer) ServeHTTP(w http.ResponseWriter, r *http.Reque
 	proxy.ServeHTTP(w, r)
 }
 
-func (lb *RendezvousLoadBalancer) computeWeight(srv *server.Server, key string) uint32 {
-	hash := fnv.New32a()
+func (lb *RendezvousLoadBalancer) computeWeight(srv *server.Server, key []byte) *big.Int {
+	hash := md5.New()
 	hash.Write([]byte(srv.Stats.Host))
 	hash.Write([]byte(fmt.Sprintf("%d", srv.Stats.Port)))
-	hash.Write([]byte(key))
-	return hash.Sum32()
+	hash.Write(key)
+	hashBytes := hash.Sum(nil)
+
+	weight := big.NewInt(0)
+	weight.SetBytes(hashBytes)
+	return weight
 }
 
 func (lb *RendezvousLoadBalancer) StartBalancer(host string, port int) error {
