@@ -7,29 +7,27 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"sync"
+
+	"github.com/MaanasSathaye/swiss/server"
 )
 
 type RRLoadBalancer struct {
-	servers []*url.URL
 	current int
+	servers []*server.Server
 	mutex   sync.Mutex
 }
 
 func NewRRLoadBalancer() *RRLoadBalancer {
 	return &RRLoadBalancer{
-		servers: []*url.URL{},
+		servers: []*server.Server{},
 		current: 0,
 	}
 }
 
-func (lb *RRLoadBalancer) AddServer(host string, port int) error {
-	serverURL, err := url.Parse(fmt.Sprintf("http://%s:%d", host, port))
-	if err != nil {
-		return err
-	}
+func (lb *RRLoadBalancer) AddServer(srv *server.Server) error {
 	lb.mutex.Lock()
 	defer lb.mutex.Unlock()
-	lb.servers = append(lb.servers, serverURL)
+	lb.servers = append(lb.servers, srv)
 	return nil
 }
 
@@ -39,8 +37,13 @@ func (lb *RRLoadBalancer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	lb.current = (lb.current + 1) % len(lb.servers)
 	lb.mutex.Unlock()
 
-	proxy := httputil.NewSingleHostReverseProxy(serverURL)
-	log.Printf("Forwarding request to server: %s", serverURL)
+	serverAddr := fmt.Sprintf("%s:%d", serverURL.Stats.Host, serverURL.Stats.Port)
+	targetURL := &url.URL{
+		Scheme: "http",
+		Host:   serverAddr,
+	}
+	proxy := httputil.NewSingleHostReverseProxy(targetURL)
+	log.Printf("Forwarding request to server: %s", targetURL)
 	proxy.ServeHTTP(w, r)
 }
 

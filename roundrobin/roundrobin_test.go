@@ -13,11 +13,9 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("LoadBalancer", func() {
+var _ = Describe("RoundRobinLoadBalancer", func() {
 	var (
 		lb      *roundrobin.RRLoadBalancer
-		hosts   []string
-		ports   []int
 		lbHost  string
 		lbPort  int
 		servers []*server.Server
@@ -27,10 +25,9 @@ var _ = Describe("LoadBalancer", func() {
 
 	BeforeEach(func() {
 		lb = roundrobin.NewRRLoadBalancer()
-		hosts = []string{}
-		ports = []int{}
 
-		for i := 0; i < 2; i++ {
+		// Create and start 3 mock servers
+		for i := 0; i < 3; i++ {
 			host, port := server.GetHostAndPort()
 
 			mockStats := stats.ServerConfig{
@@ -47,11 +44,8 @@ var _ = Describe("LoadBalancer", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			servers = append(servers, srv)
-			err = lb.AddServer(host, port)
+			err = lb.AddServer(srv)
 			Expect(err).NotTo(HaveOccurred())
-
-			hosts = append(hosts, host)
-			ports = append(ports, port)
 		}
 
 		lbHost, lbPort = server.GetHostAndPort()

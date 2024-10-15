@@ -24,6 +24,8 @@ func NewLeastConnectionsLoadBalancer() *LeastConnectionsLoadBalancer {
 }
 
 func (lb *LeastConnectionsLoadBalancer) AddServer(srv *server.Server) error {
+	lb.mutex.Lock()
+	defer lb.mutex.Unlock()
 	lb.servers = append(lb.servers, srv)
 	return nil
 }
