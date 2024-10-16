@@ -80,9 +80,11 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) Stop() {
 	s.Mutex.Lock()
-	s.Alive = false
-	close(s.statusChan)
-	s.Mutex.Unlock()
+	defer s.Mutex.Unlock()
+	if s.Alive {
+		s.Alive = false
+		close(s.statusChan) // Only close if the server was alive
+	}
 }
 
 // https://github.com/phayes/freeport/blob/master/freeport.go

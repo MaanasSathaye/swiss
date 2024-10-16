@@ -13,20 +13,20 @@ import (
 )
 
 type LeastConnectionsLoadBalancer struct {
-	servers []*server.Server
-	mutex   sync.Mutex
+	Servers []*server.Server
+	Mutex   sync.Mutex
 }
 
 func NewLeastConnectionsLoadBalancer() *LeastConnectionsLoadBalancer {
 	return &LeastConnectionsLoadBalancer{
-		servers: []*server.Server{},
+		Servers: []*server.Server{},
 	}
 }
 
 func (lb *LeastConnectionsLoadBalancer) AddServer(srv *server.Server) error {
-	lb.mutex.Lock()
-	defer lb.mutex.Unlock()
-	lb.servers = append(lb.servers, srv)
+	lb.Mutex.Lock()
+	defer lb.Mutex.Unlock()
+	lb.Servers = append(lb.Servers, srv)
 	return nil
 }
 
@@ -37,9 +37,9 @@ func (lb *LeastConnectionsLoadBalancer) ServeHTTP(w http.ResponseWriter, r *http
 		minConnections   = -1
 	)
 
-	lb.mutex.Lock()
-	defer lb.mutex.Unlock()
-	for i, srv := range lb.servers {
+	lb.Mutex.Lock()
+	defer lb.Mutex.Unlock()
+	for i, srv := range lb.Servers {
 		if i == 0 || srv.Stats.Connections < minConnections {
 			leastConnServers = []*server.Server{srv}
 			minConnections = srv.Stats.Connections
