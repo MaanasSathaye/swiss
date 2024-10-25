@@ -2,11 +2,11 @@ package leastconnections
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"math/rand"
+	"net"
 	"net/http"
-	"net/http/httputil"
-	"net/url"
 	"sync"
 
 	"github.com/MaanasSathaye/swiss/server"
@@ -35,6 +35,8 @@ func (lb *LeastConnectionsLoadBalancer) ServeHTTP(w http.ResponseWriter, r *http
 		leastConnServers []*server.Server
 		chosenServer     *server.Server
 		minConnections   = -1
+		err              error
+		conn             net.Conn
 	)
 
 	lb.Mutex.Lock()
@@ -47,7 +49,9 @@ func (lb *LeastConnectionsLoadBalancer) ServeHTTP(w http.ResponseWriter, r *http
 			leastConnServers = append(leastConnServers, srv)
 		}
 	}
-
+	// sort.SliceStable(leastConnServers, func(i, j int) bool {
+	// 	return leastConnServers[i].Stats.Connections < leastConnServers[j].Stats.Connections
+	// })
 	chosenServer = leastConnServers[rand.Intn(len(leastConnServers))]
 	chosenServer.Stats.Connections++
 
@@ -56,17 +60,28 @@ func (lb *LeastConnectionsLoadBalancer) ServeHTTP(w http.ResponseWriter, r *http
 	}()
 
 	serverAddr := fmt.Sprintf("%s:%d", chosenServer.Stats.Host, chosenServer.Stats.Port)
-	targetURL := &url.URL{
-		Scheme: "http",
-		Host:   serverAddr,
+
+	conn, err = net.Dial("tcp", serverAddr)
+	if err != nil {
+		http.Error(w, "Service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	defer conn.Close()
+
+	if err = r.Write(conn); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
-	proxy := httputil.NewSingleHostReverseProxy(targetURL)
-	proxy.ServeHTTP(w, r)
+	_, err = io.Copy(w, conn)
+	if err != nil {
+		http.Error(w, "Error proxying response", http.StatusInternalServerError)
+		return
+	}
 }
 
 func (lb *LeastConnectionsLoadBalancer) StartBalancer(host string, port int) error {
 	lbAddr := fmt.Sprintf("%s:%d", host, port)
 	log.Printf("Load balancer is listening on %s", lbAddr)
-	return http.ListenAndServe(lbAddr, lb)
+	return nil
 }

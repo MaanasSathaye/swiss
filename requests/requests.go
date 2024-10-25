@@ -31,7 +31,7 @@ func NewVariableRequest(ctx context.Context, url string) (*http.Request, error) 
 
 	// minimum request size to avoid excessively small requests
 	minSize := 1024             // 1 KB
-	maxSize := 30 * 1024 * 1024 // 30 MB
+	maxSize := 15 * 1024 * 1024 // 15 MB
 
 	randomSize := rand.Intn(maxSize-minSize+1) + minSize
 

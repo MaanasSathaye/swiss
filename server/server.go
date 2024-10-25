@@ -1,94 +1,135 @@
 package server
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"log"
 	"net"
-	"net/http"
 	"sync"
+	"time"
 
 	"github.com/MaanasSathaye/swiss/stats"
-	"github.com/gofrs/uuid/v5"
 )
 
 type Server struct {
-	Alive      bool
-	statusChan chan struct{}
-	Stats      stats.ServerConfig
-	mux        *http.ServeMux
-	Mutex      sync.Mutex
+	Alive    bool
+	Stats    stats.ConnectionStats
+	Host     string
+	Port     int
+	listener *net.TCPListener
+	stopChan chan struct{}
+	wg       sync.WaitGroup
 }
 
-func NewServer(stats stats.ServerConfig) (ns *Server, err error) {
-	return &Server{
-		Stats:      stats,
-		Alive:      false,
-		statusChan: make(chan struct{}, 1),
-		mux:        http.NewServeMux(),
-		Mutex:      sync.Mutex{},
-	}, nil
-}
-
-func (s *Server) Start() error {
-	s.Mutex.Lock()
-	if s.Alive {
-		s.Mutex.Unlock()
-		return fmt.Errorf("server already running")
-	}
-	s.Alive = true
-	s.Mutex.Unlock()
-
-	lis, err := net.Listen("tcp", s.Stats.Addr())
+// NewServer initializes a new Server with dynamically allocated Host and Port.
+func NewServer(ctx context.Context) (*Server, error) {
+	Host, Port := GetHostAndPort()
+	addr, err := net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%d", Host, Port))
 	if err != nil {
-		log.Fatalf("failed to listen: %v", err)
-		return err
+		return nil, fmt.Errorf("error resolving TCP address: %w", err)
 	}
 
-	s.mux.HandleFunc("/", s.handleConnections)
+	listener, err := net.ListenTCP("tcp", addr)
+	if err != nil {
+		return nil, fmt.Errorf("error starting TCP listener: %w", err)
+	}
+
+	server := &Server{
+		Alive:    true,
+		Stats:    stats.ConnectionStats{},
+		Host:     Host,
+		Port:     Port,
+		listener: listener,
+		stopChan: make(chan struct{}),
+	}
+
+	return server, nil
+}
+
+// Start begins accepting TCP connections on the server.
+func (s *Server) Start(ctx context.Context) {
+	var (
+		err  error
+		conn *net.TCPConn
+	)
+	log.Printf("Server starting on %s:%d\n", s.Host, s.Port)
+	s.wg.Add(1)
 
 	go func() {
-		log.Printf("HTTP server is listening on %s\n", s.Stats.Addr())
-		if err := http.Serve(lis, s.mux); err != nil && s.Alive {
-			log.Printf("HTTP server error: %v", err)
+		defer s.wg.Done()
+		for {
+			select {
+			case <-s.stopChan:
+				log.Printf("Stopping server %s%d...\n", s.Host, s.Port)
+				return
+			default:
+				s.listener.SetDeadline(time.Now().Add(1 * time.Second))
+				conn, err = s.listener.AcceptTCP()
+				if err != nil {
+					if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+						continue
+					}
+					continue
+				}
+				s.wg.Add(1)
+				go s.HandleConnection(ctx, conn)
+			}
 		}
 	}()
-
-	return nil
 }
 
-func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
-	s.Mutex.Lock()
+func (s *Server) HandleConnection(ctx context.Context, conn *net.TCPConn) {
+	var (
+		err error
+		n   int
+	)
+	defer s.wg.Done()
+	defer conn.Close()
+
+	log.Printf("New connection from %s\n", conn.RemoteAddr())
 	s.Stats.Connections++
 	s.Stats.ConnectionsAdded++
-	s.Mutex.Unlock()
 
-	defer func() {
-		s.Mutex.Lock()
+	buffer := make([]byte, 1024)
+	for {
+		n, err = conn.Read(buffer)
+		if err != nil {
+			if err == io.EOF {
+				log.Printf("Connection from %s closed\n", conn.RemoteAddr())
+				s.Stats.UpdatedAt = time.Now()
+				return
+			}
+			log.Printf("Error reading from connection: %v\n", err)
+			return
+		}
+		log.Printf("Received: %s\n", string(buffer[:n]))
+
+		if _, err = conn.Write([]byte("Acknowledged\n")); err != nil {
+			log.Printf("Error writing to connection: %v\n", err)
+			return
+		}
 		s.Stats.Connections--
 		s.Stats.ConnectionsRemoved++
-		s.Mutex.Unlock()
-	}()
-
-	resp, err := uuid.NewV4()
-	if err != nil {
-		http.Error(w, "Error generating UUID", http.StatusInternalServerError)
-		return
 	}
-	// time.Sleep(time.Duration(rand.Intn(10)) * time.Second) //simulate work mainly so least connections simulates properly
-	w.Write([]byte(resp.String()))
 }
 
+// Stop gracefully shuts down the server.
 func (s *Server) Stop() {
-	s.Mutex.Lock()
-	defer s.Mutex.Unlock()
 	if s.Alive {
+		close(s.stopChan)
+		s.listener.Close()
+		log.Printf("Server %s%d stopped.\n", s.Host, s.Port)
 		s.Alive = false
-		close(s.statusChan) // Only close if the server was alive
 	}
+}
+
+func (s *Server) Address() string {
+	return fmt.Sprint(s.Host, ":", s.Port)
 }
 
 // https://github.com/phayes/freeport/blob/master/freeport.go
-// GetFreePort asks the kernel for a free open port that is ready to use.
+// GetFreePort asks the kernel for a free open Port that is ready to use.
 func GetFreePort() (int, error) {
 	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
 	if err != nil {
@@ -105,9 +146,9 @@ func GetFreePort() (int, error) {
 
 func GetHostAndPort() (string, int) {
 
-	port, err := GetFreePort()
+	Port, err := GetFreePort()
 	if err != nil {
-		port = 0
+		Port = 0
 	}
-	return "0.0.0.0", port
+	return "0.0.0.0", Port
 }

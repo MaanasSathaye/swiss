@@ -10,6 +10,8 @@ type ConnectionStats struct {
 	Connections        int
 	ConnectionsAdded   int
 	ConnectionsRemoved int
+	Load               float32
+	UpdatedAt          time.Time
 }
 
 func (cs *ConnectionStats) String() string {
@@ -20,31 +22,4 @@ func (cs *ConnectionStats) Equal(rhs *ConnectionStats) bool {
 	return cs.Connections == rhs.Connections &&
 		cs.ConnectionsRemoved == rhs.ConnectionsRemoved &&
 		cs.ConnectionsAdded == rhs.ConnectionsAdded
-}
-
-type ServerConfig struct {
-	State              int
-	Id                 string
-	Connections        int
-	ConnectionsAdded   int
-	ConnectionsRemoved int
-	UpdatedAt          time.Time
-	Load               float32
-	Host               string
-	Port               int
-}
-
-func (sc *ServerConfig) Equal(rhs *ServerConfig) bool {
-	return sc.Id == rhs.Id &&
-		sc.Connections == rhs.Connections &&
-		sc.ConnectionsAdded == rhs.ConnectionsAdded &&
-		sc.ConnectionsRemoved == rhs.ConnectionsRemoved
-}
-
-func (sc *ServerConfig) String() string {
-	return fmt.Sprintf("Server(%s): Addr=%s Conns=%d Load=%f", sc.Id, sc.Addr(), sc.Connections, sc.Load)
-}
-
-func (sc *ServerConfig) Addr() string {
-	return fmt.Sprintf("%s:%d", sc.Host, sc.Port)
 }

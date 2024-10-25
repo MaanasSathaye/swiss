@@ -1,141 +1,151 @@
 package server_test
 
 import (
+	"context"
 	"fmt"
 	"net"
-	"net/http"
-	"strconv"
 	"time"
 
+	"github.com/gofrs/uuid/v5"
+
 	"github.com/MaanasSathaye/swiss/server"
-	"github.com/MaanasSathaye/swiss/stats"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("GetFreePort", func() {
-	It("should return a free port", func() {
-		port, err := server.GetFreePort()
-		Expect(err).To(BeNil())
-		Expect(port).Should(BeNumerically(">", 0))
+var _ = Describe("TCP Server", func() {
+	Context("Starting and stopping a single server", func() {
+		It("should start and stop successfully", func() {
+			var (
+				err error
+				srv *server.Server
+			)
+			ctx, done := context.WithTimeout(context.Background(), 15*time.Second)
+			defer done()
+			srv, err = server.NewServer(ctx)
+			Expect(err).To(BeNil())
+			Expect(srv).NotTo(BeNil())
 
-		// Try to listen on the port
-		l, err := net.Listen("tcp", "localhost"+":"+strconv.Itoa(port))
-		Expect(err).To(BeNil())
-		defer l.Close()
-	})
-})
+			srv.Start(ctx)
+			Expect(srv.Alive).To(BeTrue())
 
-var _ = Describe("Server", func() {
-	var (
-		srv  *server.Server
-		err  error
-		host string
-		port int
-	)
-
-	BeforeEach(func() {
-		host, port = server.GetHostAndPort()
-		mockStats := stats.ServerConfig{
-			Id:        "test-server",
-			Host:      host,
-			Port:      port,
-			UpdatedAt: time.Now(),
-			Load:      0.0,
-		}
-
-		srv, err = server.NewServer(mockStats)
-		Expect(err).NotTo(HaveOccurred())
-
-		err = srv.Start()
-		Expect(err).NotTo(HaveOccurred())
-
-		go func() {
-			// Wait for the server to start listening
 			time.Sleep(1 * time.Second)
 
-			url := fmt.Sprintf("http://%s:%d", host, port)
-			resp, err := http.Get(url)
-			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
-
-			Expect(resp.StatusCode).To(Equal(http.StatusOK))
-		}()
-	})
-
-	AfterEach(func() {
-		srv.Stop()
-	})
-
-	It("should start the server and handle an HTTP request", func() {
-		Expect(srv.Stats.Connections).To(Equal(0))
-
-		// Wait to give the request time to process
-		time.Sleep(3 * time.Second)
-		Expect(srv.Stats.ConnectionsAdded).To(Equal(1))
-		Expect(srv.Stats.ConnectionsRemoved).To(Equal(1))
-	})
-})
-
-var _ = Describe("Multiple Servers", func() {
-	var (
-		servers []*server.Server
-	)
-
-	BeforeEach(func() {
-		servers = []*server.Server{}
-	})
-	AfterEach(func() {
-		for _, srv := range servers {
 			srv.Stop()
-		}
+			Expect(srv.Alive).To(BeFalse())
+		})
 	})
 
-	It("should start multiple servers and handle HTTP requests on different ports", func() {
-		servercount := 5
-		addresses := []string{}
-
-		for i := 0; i < servercount; i++ {
-			host, port := server.GetHostAndPort()
-			mockStats := stats.ServerConfig{
-				Id:        fmt.Sprintf("test-server-%d", i),
-				Host:      host,
-				Port:      port,
-				UpdatedAt: time.Now(),
-				Load:      0.0,
+	Context("Starting and stopping multiple servers", func() {
+		It("should start and stop multiple servers successfully", func() {
+			var (
+				servers []*server.Server
+				err     error
+				ctx     context.Context
+				srv     *server.Server
+			)
+			ctx, done := context.WithTimeout(context.Background(), 15*time.Second)
+			defer done()
+			for i := 0; i < 3; i++ {
+				srv, err = server.NewServer(ctx)
+				Expect(err).To(BeNil())
+				Expect(srv).NotTo(BeNil())
+				servers = append(servers, srv)
+				srv.Start(ctx)
+				Expect(srv.Alive).To(BeTrue())
 			}
 
-			srv, err := server.NewServer(mockStats)
-			Expect(err).NotTo(HaveOccurred())
+			time.Sleep(1 * time.Second)
 
-			err = srv.Start()
-			Expect(err).NotTo(HaveOccurred())
+			for _, srv := range servers {
+				srv.Stop()
+				Expect(srv.Alive).To(BeFalse())
+			}
+		})
+	})
 
-			servers = append(servers, srv)
-			addresses = append(addresses, fmt.Sprintf("http://%s:%d", host, port))
-		}
+	Context("Starting a server and handling a connection", func() {
+		It("should accept a connection and handle it", func() {
+			var (
+				srv *server.Server
+				err error
+				id  uuid.UUID
+				n   int
+			)
+			ctx, done := context.WithTimeout(context.Background(), 15*time.Second)
+			defer done()
+			srv, err = server.NewServer(ctx)
+			Expect(err).To(BeNil())
+			Expect(srv).NotTo(BeNil())
 
-		// Send HTTP requests to each server and verify they respond
-		for i, address := range addresses {
-			go func(addr string, index int) {
-				time.Sleep(1 * time.Second)
+			srv.Start(ctx)
+			Expect(srv.Alive).To(BeTrue())
 
-				resp, err := http.Get(addr)
-				Expect(err).NotTo(HaveOccurred())
-				defer resp.Body.Close()
+			conn, err := net.Dial("tcp", srv.Address())
+			Expect(err).To(BeNil())
+			Expect(conn).NotTo(BeNil())
 
-				Expect(resp.StatusCode).To(Equal(http.StatusOK))
-				Expect(servers[index].Stats.ConnectionsAdded).To(Equal(1))
-				Expect(servers[index].Stats.ConnectionsRemoved).To(Equal(1))
-			}(address, i)
-		}
+			id, err = uuid.NewV4()
+			Expect(err).To(BeNil())
+			resp := fmt.Sprint("hello ", id)
+			_, err = conn.Write([]byte(resp))
+			Expect(err).To(BeNil())
 
-		// Give enough time for requests to be processed
-		time.Sleep(3 * time.Second)
+			buffer := make([]byte, 1024)
+			n, err = conn.Read(buffer)
+			Expect(err).To(BeNil())
+			Expect(string(buffer[:n])).To(ContainSubstring("Acknowledged"))
 
-		for _, srv := range servers {
-			Expect(srv.Stats.ConnectionsAdded).To(Equal(1))
-			Expect(srv.Stats.ConnectionsRemoved).To(Equal(1))
-		}
+			conn.Close()
+			srv.Stop()
+			Expect(srv.Alive).To(BeFalse())
+		})
+	})
+
+	Context("Starting multiple servers and handling multiple connections", func() {
+		It("should accept multiple connections on multiple servers", func() {
+			var (
+				srv     *server.Server
+				servers []*server.Server
+				err     error
+				id      uuid.UUID
+				conn    net.Conn
+			)
+			ctx, done := context.WithTimeout(context.Background(), 15*time.Second)
+			defer done()
+
+			for i := 0; i < 2; i++ {
+				srv, err = server.NewServer(ctx)
+				Expect(err).To(BeNil())
+				Expect(srv).NotTo(BeNil())
+				servers = append(servers, srv)
+				srv.Start(ctx)
+				Expect(srv.Alive).To(BeTrue())
+			}
+
+			for _, srv := range servers {
+				conn, err = net.Dial("tcp", srv.Address())
+				Expect(err).To(BeNil())
+				Expect(conn).NotTo(BeNil())
+
+				id, err = uuid.NewV4()
+				Expect(err).To(BeNil())
+				resp := fmt.Sprint("hello ", id)
+				_, err = conn.Write([]byte(resp))
+				Expect(err).To(BeNil())
+
+				buffer := make([]byte, 1024)
+				n, err := conn.Read(buffer)
+				Expect(err).To(BeNil())
+				Expect(string(buffer[:n])).To(ContainSubstring("Acknowledged"))
+
+				conn.Close()
+			}
+
+			for _, srv := range servers {
+				srv.Stop()
+				Expect(srv.Alive).To(BeFalse())
+			}
+		})
 	})
 })
