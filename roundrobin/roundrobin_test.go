@@ -32,7 +32,6 @@ var _ = Describe("roundrobin.RRLoadBalancer", func() {
 			return nil, err
 		}
 		go s.Start(ctx)
-		time.Sleep(100 * time.Millisecond) // Allow server to start up
 		return s, nil
 	}
 
@@ -43,6 +42,7 @@ var _ = Describe("roundrobin.RRLoadBalancer", func() {
 		if lb != nil {
 			lb.Stop()
 		}
+		time.Sleep(1 * time.Second)
 	})
 
 	It("should start and stop the load balancer successfully", func() {
@@ -82,17 +82,13 @@ var _ = Describe("roundrobin.RRLoadBalancer", func() {
 		Expect(string(buff[:n])).To(ContainSubstring("Acknowledged"))
 	})
 
-	FIt("should round-robin connections across multiple servers", func() {
+	It("should round-robin connections across multiple servers", func() {
 		var (
 			err  error
 			s    *server.Server
 			conn net.Conn
-			n    int
 			wg   sync.WaitGroup
 		)
-
-		numConnections := 6
-		wg.Add(numConnections)
 
 		for i := 0; i < 3; i++ {
 			s, err = startServer()
@@ -109,42 +105,45 @@ var _ = Describe("roundrobin.RRLoadBalancer", func() {
 		err = lb.Start(ctx, h, p)
 		Expect(err).To(BeNil())
 
-		for i := 0; i < numConnections; i++ {
+		stopTime := time.Now().Add(10 * time.Second)
+		connectionsSent := 0
+		for time.Now().Before(stopTime) {
+			wg.Add(1)
 			go func(i int) {
-				time.Sleep(5 * time.Second)
 				defer wg.Done()
 
-				log.Printf("Dialing connection %d\n", i)
-				conn, err = net.DialTimeout("tcp", fmt.Sprintf("%s:%d", h, p), 5*time.Second)
+				conn, err = net.Dial("tcp", fmt.Sprintf("%s:%d", h, p))
 				Expect(err).To(BeNil())
 				defer conn.Close()
 
-				log.Printf("Sending message from connection %d\n", i)
 				_, err = conn.Write([]byte("Hello"))
 				Expect(err).To(BeNil())
 
-				// Set read deadline to avoid hanging
-				conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-
 				buff := make([]byte, 1024)
-				if n, err = conn.Read(buff); err != nil {
-					log.Printf("Error on connection %d: %v\n", i, err)
-				}
+				conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+				_, err = conn.Read(buff)
 				Expect(err).To(BeNil())
-				Expect(string(buff[:n])).To(ContainSubstring("Acknowledged"))
-
-				log.Printf("Connection %d processed\n", i)
-			}(i)
+				Expect(string(buff)).To(ContainSubstring("Acknowledged"))
+			}(connectionsSent)
+			connectionsSent++
+			time.Sleep(100 * time.Millisecond)
 		}
-		time.Sleep(10 * time.Second)
+
 		wg.Wait()
 		log.Println("All connections processed, now stopping servers and load balancer.")
 
+		totalConnections := 0
+		for _, s := range backendServers {
+			totalConnections += s.Stats.ConnectionsAdded
+		}
+
+		avgConnections := totalConnections / len(backendServers)
 		for _, s := range backendServers {
 			log.Printf("Server %s:%d stats - Connections: %d, Added: %d, Removed: %d",
 				s.Host, s.Port, s.Stats.Connections, s.Stats.ConnectionsAdded, s.Stats.ConnectionsRemoved)
 
-			Expect(s.Stats.ConnectionsAdded).To(BeNumerically(">", 0))
+			Expect(s.Stats.ConnectionsAdded).To(BeNumerically(">=", avgConnections-1))
+			Expect(s.Stats.ConnectionsAdded).To(BeNumerically("<=", avgConnections+1))
 		}
 	})
 

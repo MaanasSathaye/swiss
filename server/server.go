@@ -92,7 +92,9 @@ func (s *Server) HandleConnection(ctx context.Context, conn *net.TCPConn) {
 	s.Stats.ConnectionsAdded++
 
 	buffer := make([]byte, 1024)
+	s.wg.Add(1)
 	for {
+		defer s.wg.Done()
 		n, err = conn.Read(buffer)
 		if err != nil {
 			if err == io.EOF {
@@ -111,6 +113,7 @@ func (s *Server) HandleConnection(ctx context.Context, conn *net.TCPConn) {
 		}
 		s.Stats.Connections--
 		s.Stats.ConnectionsRemoved++
+		s.Stats.UpdatedAt = time.Now()
 	}
 }
 
