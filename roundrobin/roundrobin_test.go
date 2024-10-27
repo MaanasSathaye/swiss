@@ -85,7 +85,6 @@ var _ = Describe("roundrobin.RRLoadBalancer", func() {
 	It("should round-robin connections across multiple servers", func() {
 		var (
 			err  error
-			s    *server.Server
 			conn net.Conn
 			wg   sync.WaitGroup
 		)
@@ -120,8 +119,10 @@ var _ = Describe("roundrobin.RRLoadBalancer", func() {
 				Expect(err).To(BeNil())
 
 				buff := make([]byte, 1024)
-				conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+				conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 				_, err = conn.Read(buff)
+				log.Printf("Server %s:%d stats - Connections: %d, Added: %d, Removed: %d",
+					s.Host, s.Port, s.Stats.Connections, s.Stats.ConnectionsAdded, s.Stats.ConnectionsRemoved)
 				Expect(err).To(BeNil())
 				Expect(string(buff)).To(ContainSubstring("Acknowledged"))
 			}(connectionsSent)

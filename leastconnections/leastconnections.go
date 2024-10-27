@@ -1,87 +1,136 @@
 package leastconnections
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
 	"math/rand"
 	"net"
-	"net/http"
 	"sync"
-
-	"github.com/MaanasSathaye/swiss/server"
 )
 
-type LeastConnectionsLoadBalancer struct {
-	Servers []*server.Server
-	Mutex   sync.Mutex
+type BackendServer struct {
+	Host        string
+	Port        int
+	Connections int
 }
 
-func NewLeastConnectionsLoadBalancer() *LeastConnectionsLoadBalancer {
+type LeastConnectionsLoadBalancer struct {
+	servers  []*BackendServer
+	mu       sync.Mutex
+	listener *net.TCPListener
+	stopChan chan struct{}
+	wg       sync.WaitGroup
+}
+
+// NewLeastConnectionsLoadBalancer initializes a new least Connections load balancer
+func NewLeastConnectionsLoadBalancer(ctx context.Context) *LeastConnectionsLoadBalancer {
 	return &LeastConnectionsLoadBalancer{
-		Servers: []*server.Server{},
+		servers:  []*BackendServer{},
+		stopChan: make(chan struct{}),
 	}
 }
 
-func (lb *LeastConnectionsLoadBalancer) AddServer(srv *server.Server) error {
-	lb.Mutex.Lock()
-	defer lb.Mutex.Unlock()
-	lb.Servers = append(lb.Servers, srv)
-	return nil
+// AddServer adds a backend server to the load balancer's rotation
+func (lb *LeastConnectionsLoadBalancer) AddServer(host string, port, connections int) {
+	lb.mu.Lock()
+	defer lb.mu.Unlock()
+	lb.servers = append(lb.servers, &BackendServer{Host: host, Port: port, Connections: connections})
 }
 
-func (lb *LeastConnectionsLoadBalancer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	var (
-		leastConnServers []*server.Server
-		chosenServer     *server.Server
-		minConnections   = -1
-		err              error
-		conn             net.Conn
-	)
+// getLeastConnectionServer returns the server with the least Connections
+func (lb *LeastConnectionsLoadBalancer) getLeastConnectionServer() *BackendServer {
+	lb.mu.Lock()
+	defer lb.mu.Unlock()
 
-	lb.Mutex.Lock()
-	defer lb.Mutex.Unlock()
-	for i, srv := range lb.Servers {
-		if i == 0 || srv.Stats.Connections < minConnections {
-			leastConnServers = []*server.Server{srv}
-			minConnections = srv.Stats.Connections
-		} else if srv.Stats.Connections == minConnections {
+	var leastConnServers []*BackendServer
+	minConnections := -1
+
+	for _, srv := range lb.servers {
+		if minConnections < 0 || srv.Connections < minConnections {
+			leastConnServers = []*BackendServer{srv}
+			minConnections = srv.Connections
+		} else if srv.Connections == minConnections {
 			leastConnServers = append(leastConnServers, srv)
 		}
 	}
-	// sort.SliceStable(leastConnServers, func(i, j int) bool {
-	// 	return leastConnServers[i].Stats.Connections < leastConnServers[j].Stats.Connections
-	// })
-	chosenServer = leastConnServers[rand.Intn(len(leastConnServers))]
-	chosenServer.Stats.Connections++
 
-	defer func() {
-		chosenServer.Stats.Connections--
-	}()
-
-	serverAddr := fmt.Sprintf("%s:%d", chosenServer.Stats.Host, chosenServer.Stats.Port)
-
-	conn, err = net.Dial("tcp", serverAddr)
-	if err != nil {
-		http.Error(w, "Service unavailable", http.StatusServiceUnavailable)
-		return
-	}
-	defer conn.Close()
-
-	if err = r.Write(conn); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	_, err = io.Copy(w, conn)
-	if err != nil {
-		http.Error(w, "Error proxying response", http.StatusInternalServerError)
-		return
-	}
+	return leastConnServers[rand.Intn(len(leastConnServers))]
 }
 
-func (lb *LeastConnectionsLoadBalancer) StartBalancer(host string, port int) error {
-	lbAddr := fmt.Sprintf("%s:%d", host, port)
-	log.Printf("Load balancer is listening on %s", lbAddr)
+// Start begins accepting TCP Connections for load balancing
+func (lb *LeastConnectionsLoadBalancer) Start(ctx context.Context, host string, port int) error {
+	addr, err := net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%d", host, port))
+	if err != nil {
+		return err
+	}
+
+	lb.listener, err = net.ListenTCP("tcp", addr)
+	if err != nil {
+		return err
+	}
+
+	lb.wg.Add(1)
+	go func() {
+		defer lb.wg.Done()
+		for {
+			select {
+			case <-lb.stopChan:
+				return
+			default:
+				conn, err := lb.listener.AcceptTCP()
+				if err != nil {
+					continue
+				}
+				go lb.handleConnection(conn)
+			}
+		}
+	}()
+
+	log.Printf("Least Connections Load balancer started on %s:%d\n", host, port)
 	return nil
+}
+
+// handleConnection manages the connection between client and backend server
+func (lb *LeastConnectionsLoadBalancer) handleConnection(clientConn *net.TCPConn) {
+	defer clientConn.Close()
+
+	server := lb.getLeastConnectionServer()
+	backendAddr := fmt.Sprintf("%s:%d", server.Host, server.Port)
+	backendConn, err := net.Dial("tcp", backendAddr)
+	if err != nil {
+		log.Printf("Failed to connect to backend server %s: %v", backendAddr, err)
+		return
+	}
+	defer backendConn.Close()
+
+	server.Connections++
+
+	wg := sync.WaitGroup{}
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		io.Copy(backendConn, clientConn)
+	}()
+
+	go func() {
+		defer wg.Done()
+		io.Copy(clientConn, backendConn)
+	}()
+
+	wg.Wait()
+	server.Connections--
+
+}
+
+// Stop shuts down the load balancer gracefully
+func (lb *LeastConnectionsLoadBalancer) Stop() {
+	close(lb.stopChan)
+	if lb.listener != nil {
+		lb.listener.Close()
+	}
+	lb.wg.Wait()
+	log.Println("Least Connections Load balancer stopped.")
 }

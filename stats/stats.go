@@ -18,6 +18,12 @@ func (cs *ConnectionStats) String() string {
 	return fmt.Sprintf("Connectionss=%d Added=%d Removed=%d", cs.Connections, cs.ConnectionsAdded, cs.ConnectionsRemoved)
 }
 
+func (cs *ConnectionStats) Reset() {
+	cs.Connections = 0
+	cs.ConnectionsAdded = 0
+	cs.ConnectionsRemoved = 0
+}
+
 func (cs *ConnectionStats) Equal(rhs *ConnectionStats) bool {
 	return cs.Connections == rhs.Connections &&
 		cs.ConnectionsRemoved == rhs.ConnectionsRemoved &&
