@@ -89,7 +89,7 @@ var _ = Describe("rendezvous.RendezvousLoadBalancer", func() {
 		Expect(string(buff[:n])).To(ContainSubstring("Acknowledged"))
 	})
 
-	FIt("should distribute connections based on Rendezvous hashing across multiple servers", func() {
+	It("should distribute connections based on Rendezvous hashing across multiple servers", func() {
 		var (
 			err  error
 			conn net.Conn
