@@ -8,16 +8,12 @@ import (
 	"math/rand"
 	"net"
 	"sync"
+
+	"github.com/MaanasSathaye/swiss/server"
 )
 
-type BackendServer struct {
-	Host        string
-	Port        int
-	Connections int
-}
-
 type LeastConnectionsLoadBalancer struct {
-	servers  []*BackendServer
+	servers  []*server.DummyServer
 	mu       sync.Mutex
 	listener *net.TCPListener
 	stopChan chan struct{}
@@ -27,7 +23,7 @@ type LeastConnectionsLoadBalancer struct {
 // NewLeastConnectionsLoadBalancer initializes a new least Connections load balancer
 func NewLeastConnectionsLoadBalancer(ctx context.Context) *LeastConnectionsLoadBalancer {
 	return &LeastConnectionsLoadBalancer{
-		servers:  []*BackendServer{},
+		servers:  []*server.DummyServer{},
 		stopChan: make(chan struct{}),
 	}
 }
@@ -36,20 +32,20 @@ func NewLeastConnectionsLoadBalancer(ctx context.Context) *LeastConnectionsLoadB
 func (lb *LeastConnectionsLoadBalancer) AddServer(host string, port, connections int) {
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
-	lb.servers = append(lb.servers, &BackendServer{Host: host, Port: port, Connections: connections})
+	lb.servers = append(lb.servers, &server.DummyServer{Host: host, Port: port, Connections: connections})
 }
 
 // getLeastConnectionServer returns the server with the least Connections
-func (lb *LeastConnectionsLoadBalancer) getLeastConnectionServer() *BackendServer {
+func (lb *LeastConnectionsLoadBalancer) getLeastConnectionServer() *server.DummyServer {
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
 
-	var leastConnServers []*BackendServer
+	var leastConnServers []*server.DummyServer
 	minConnections := -1
 
 	for _, srv := range lb.servers {
 		if minConnections < 0 || srv.Connections < minConnections {
-			leastConnServers = []*BackendServer{srv}
+			leastConnServers = []*server.DummyServer{srv}
 			minConnections = srv.Connections
 		} else if srv.Connections == minConnections {
 			leastConnServers = append(leastConnServers, srv)

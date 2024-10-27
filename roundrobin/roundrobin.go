@@ -7,15 +7,12 @@ import (
 	"log"
 	"net"
 	"sync"
+
+	"github.com/MaanasSathaye/swiss/server"
 )
 
-type BackendServer struct {
-	Host string
-	Port int
-}
-
 type RRLoadBalancer struct {
-	servers      []*BackendServer
+	servers      []*server.DummyServer
 	currentIndex int
 	mu           sync.Mutex
 	listener     *net.TCPListener
@@ -26,7 +23,7 @@ type RRLoadBalancer struct {
 // NewRRLoadBalancer initializes a new round-robin load balancer
 func NewRRLoadBalancer(ctx context.Context) *RRLoadBalancer {
 	return &RRLoadBalancer{
-		servers:  []*BackendServer{},
+		servers:  []*server.DummyServer{},
 		stopChan: make(chan struct{}),
 	}
 }
@@ -35,11 +32,11 @@ func NewRRLoadBalancer(ctx context.Context) *RRLoadBalancer {
 func (lb *RRLoadBalancer) AddServer(host string, port int) {
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
-	lb.servers = append(lb.servers, &BackendServer{Host: host, Port: port})
+	lb.servers = append(lb.servers, &server.DummyServer{Host: host, Port: port})
 }
 
 // getNextServer returns the next server in round-robin order
-func (lb *RRLoadBalancer) getNextServer() *BackendServer {
+func (lb *RRLoadBalancer) getNextServer() *server.DummyServer {
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
 	server := lb.servers[lb.currentIndex]

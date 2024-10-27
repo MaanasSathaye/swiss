@@ -1,67 +1,142 @@
 package rendezvous
 
 import (
+	"context"
 	"crypto/md5"
 	"fmt"
+	"io"
+	"log"
 	"math/big"
-	"net/http"
-	"net/http/httputil"
-	"net/url"
+	"net"
 	"sync"
 
 	"github.com/MaanasSathaye/swiss/server"
 )
 
-type RendezvousLoadBalancer struct {
-	servers []*server.Server
-	mutex   sync.Mutex
+type RendezvousHashingLoadBalancer struct {
+	servers  []*server.DummyServer
+	listener *net.TCPListener
+	mu       sync.Mutex
+	stopChan chan struct{}
+	wg       sync.WaitGroup
 }
 
-func NewRendezvousLoadBalancer() *RendezvousLoadBalancer {
-	return &RendezvousLoadBalancer{
-		servers: []*server.Server{},
+func NewRendezvousHashingLoadBalancer(ctx context.Context) *RendezvousHashingLoadBalancer {
+	return &RendezvousHashingLoadBalancer{
+		servers:  []*server.DummyServer{},
+		stopChan: make(chan struct{}),
 	}
 }
 
-func (lb *RendezvousLoadBalancer) AddServer(srv *server.Server) error {
-	lb.mutex.Lock()
-	defer lb.mutex.Unlock()
-	lb.servers = append(lb.servers, srv)
+// AddServer adds a backend server to the load balancer's rotation
+func (lb *RendezvousHashingLoadBalancer) AddServer(host string, port int) {
+	lb.mu.Lock()
+	defer lb.mu.Unlock()
+	lb.servers = append(lb.servers, &server.DummyServer{Host: host, Port: port})
+}
+
+// Start begins accepting TCP connections for load balancing
+func (lb *RendezvousHashingLoadBalancer) Start(ctx context.Context, host string, port int) error {
+	addr, err := net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%d", host, port))
+	if err != nil {
+		return err
+	}
+
+	lb.listener, err = net.ListenTCP("tcp", addr)
+	if err != nil {
+		return err
+	}
+
+	lb.wg.Add(1)
+	go func() {
+		defer lb.wg.Done()
+		for {
+			select {
+			case <-lb.stopChan:
+				return
+			default:
+				conn, err := lb.listener.AcceptTCP()
+				if err != nil {
+					continue
+				}
+				go lb.handleConnection(conn)
+			}
+		}
+	}()
+
+	log.Printf("Rendezvous Hashing Load balancer started on %s:%d\n", host, port)
 	return nil
 }
 
-func (lb *RendezvousLoadBalancer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	lb.mutex.Lock()
-	defer lb.mutex.Unlock()
+// handleConnection manages the connection between client and backend server
+func (lb *RendezvousHashingLoadBalancer) handleConnection(clientConn *net.TCPConn) {
+	defer clientConn.Close()
 
-	var (
-		chosenServer *server.Server
-		maxWeight    = big.NewInt(0)
-		requestKey   = []byte(r.URL.Path)
-	)
+	// Assume we read from the connection here
+	key := make([]byte, 16)
+	if _, err := clientConn.Read(key); err != nil {
+		log.Printf("Failed to read key from client connection: %v", err)
+		return
+	}
+
+	chosenServer, err := lb.getServer(key)
+	if err != nil {
+		log.Printf("Failed to select server: %v", err)
+		return
+	}
+
+	backendAddr := fmt.Sprintf("%s:%d", chosenServer.Host, chosenServer.Port)
+	backendConn, err := net.Dial("tcp", backendAddr)
+	if err != nil {
+		log.Printf("Failed to connect to backend server %s: %v", backendAddr, err)
+		return
+	}
+	defer backendConn.Close()
+
+	wg := sync.WaitGroup{}
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		io.Copy(backendConn, clientConn)
+	}()
+
+	go func() {
+		defer wg.Done()
+		io.Copy(clientConn, backendConn)
+	}()
+
+	wg.Wait()
+}
+
+// getServer uses rendezvous hashing to choose a backend server
+func (lb *RendezvousHashingLoadBalancer) getServer(key []byte) (*server.DummyServer, error) {
+	lb.mu.Lock()
+	defer lb.mu.Unlock()
+
+	if len(lb.servers) == 0 {
+		return nil, fmt.Errorf("no servers available")
+	}
+
+	var chosenServer *server.DummyServer
+	maxWeight := big.NewInt(0)
 
 	for _, srv := range lb.servers {
-		weight := lb.computeWeight(srv, requestKey)
+		weight := lb.computeWeight(srv, key)
 		if weight.Cmp(maxWeight) == 1 {
 			maxWeight = weight
 			chosenServer = srv
 		}
 	}
 
-	serverURL, err := url.Parse(fmt.Sprintf("http://%s:%d", chosenServer.Stats.Host, chosenServer.Stats.Port))
-	if err != nil {
-		http.Error(w, "Bad Gateway", http.StatusBadGateway)
-		return
-	}
-
-	proxy := httputil.NewSingleHostReverseProxy(serverURL)
-	proxy.ServeHTTP(w, r)
+	return chosenServer, nil
 }
 
-func (lb *RendezvousLoadBalancer) computeWeight(srv *server.Server, key []byte) *big.Int {
+// computeWeight calculates the weight for a server using its host, port, and the request key
+func (lb *RendezvousHashingLoadBalancer) computeWeight(srv *server.DummyServer, key []byte) *big.Int {
 	hash := md5.New()
-	hash.Write([]byte(srv.Stats.Host))
-	hash.Write([]byte(fmt.Sprintf("%d", srv.Stats.Port)))
+	hash.Write([]byte(srv.Host))
+	hash.Write([]byte(fmt.Sprintf("%d", srv.Port)))
 	hash.Write(key)
 	hashBytes := hash.Sum(nil)
 
@@ -70,7 +145,12 @@ func (lb *RendezvousLoadBalancer) computeWeight(srv *server.Server, key []byte) 
 	return weight
 }
 
-func (lb *RendezvousLoadBalancer) StartBalancer(host string, port int) error {
-	lbAddr := fmt.Sprintf("%s:%d", host, port)
-	return http.ListenAndServe(lbAddr, lb)
+// Stop shuts down the load balancer gracefully
+func (lb *RendezvousHashingLoadBalancer) Stop() {
+	close(lb.stopChan)
+	if lb.listener != nil {
+		lb.listener.Close()
+	}
+	lb.wg.Wait()
+	log.Println("Rendezvous Hashing Load balancer stopped.")
 }

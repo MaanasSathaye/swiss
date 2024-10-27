@@ -12,6 +12,11 @@ import (
 	"github.com/MaanasSathaye/swiss/stats"
 )
 
+type DummyServer struct {
+	Host        string
+	Port        int
+	Connections int
+}
 type Server struct {
 	Alive    bool
 	Stats    stats.ConnectionStats

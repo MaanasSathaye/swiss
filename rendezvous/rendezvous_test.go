@@ -1,85 +1,150 @@
 package rendezvous_test
 
 import (
+	"context"
 	"fmt"
-	"net/http"
+	"log"
+	"net"
+	"sync"
 	"time"
 
 	"github.com/MaanasSathaye/swiss/rendezvous"
 	"github.com/MaanasSathaye/swiss/server"
-	"github.com/MaanasSathaye/swiss/stats"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("RendezvousLoadBalancer", func() {
+var _ = Describe("rendezvous.RendezvousLoadBalancer", func() {
 	var (
-		lb      *rendezvous.RendezvousLoadBalancer
-		lbHost  string
-		lbPort  int
-		servers []*server.Server
-		err     error
-		srv     *server.Server
+		lb             *rendezvous.RendezvousHashingLoadBalancer
+		srv            *server.Server
+		backendServers []*server.Server
+		err            error
+		s              *server.Server
 	)
 
-	BeforeEach(func() {
-		lb = rendezvous.NewRendezvousLoadBalancer()
+	ctx, done := context.WithTimeout(context.Background(), 15*time.Second)
+	defer done()
 
-		// Create and start 3 mock servers
-		for i := 0; i < 3; i++ {
-			host, port := server.GetHostAndPort()
-
-			mockStats := stats.ServerConfig{
-				Id:        fmt.Sprintf("server-%d", i),
-				Host:      host,
-				Port:      port,
-				UpdatedAt: time.Now(),
-			}
-
-			srv, err = server.NewServer(mockStats)
-			Expect(err).NotTo(HaveOccurred())
-
-			err = srv.Start()
-			Expect(err).NotTo(HaveOccurred())
-
-			servers = append(servers, srv)
-			err = lb.AddServer(srv)
-			Expect(err).NotTo(HaveOccurred())
+	// Helper function to start a server with a dynamic port
+	startServer := func() (*server.Server, error) {
+		s, err = server.NewServer(ctx)
+		if err != nil {
+			return nil, err
 		}
+		go s.Start(ctx)
+		return s, nil
+	}
 
-		lbHost, lbPort = server.GetHostAndPort()
+	AfterEach(func() {
+		for _, s := range backendServers {
+			s.Stop()
+		}
+		if lb != nil {
+			lb.Stop()
+		}
+		time.Sleep(1 * time.Second)
+	})
 
-		go func() {
-			err = lb.StartBalancer(lbHost, lbPort)
-			Expect(err).NotTo(HaveOccurred())
-		}()
+	It("should start and stop the load balancer successfully", func() {
+		lb = rendezvous.NewRendezvousHashingLoadBalancer(ctx)
+		h, p := server.GetHostAndPort()
+		err = lb.Start(ctx, h, p)
+		Expect(err).To(BeNil())
 
 		time.Sleep(1 * time.Second)
 	})
 
-	AfterEach(func() {
-		for _, srv := range servers {
-			srv.Stop()
-		}
+	It("should start a server and handle a connection via load balancer", func() {
+		var (
+			err  error
+			conn net.Conn
+			n    int
+		)
+		srv, err = startServer()
+		Expect(err).To(BeNil())
+
+		lb = rendezvous.NewRendezvousHashingLoadBalancer(ctx)
+		lb.AddServer(srv.Host, srv.Port)
+		h, p := server.GetHostAndPort()
+		err = lb.Start(ctx, h, p)
+		Expect(err).To(BeNil())
+
+		conn, err = net.Dial("tcp", fmt.Sprintf("%s:%d", h, p))
+		Expect(err).To(BeNil())
+		defer conn.Close()
+
+		_, err = conn.Write([]byte("Hello"))
+		Expect(err).To(BeNil())
+
+		conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+		buff := make([]byte, 1024)
+		n, err = conn.Read(buff)
+		Expect(err).To(BeNil())
+		Expect(string(buff[:n])).To(ContainSubstring("Acknowledged"))
 	})
 
-	It("should distribute requests across servers based on hash weight", func() {
-		requestCount := 100
-		serverRequestCounts := make([]int, len(servers))
+	It("should distribute connections based on Rendezvous hashing across multiple servers", func() {
+		var (
+			err  error
+			conn net.Conn
+			wg   sync.WaitGroup
+		)
 
-		for i := 0; i < requestCount; i++ {
-			url := fmt.Sprintf("http://%s:%d/some-path-%d", lbHost, lbPort, i)
-			resp, err := http.Get(url)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(resp.StatusCode).To(Equal(http.StatusOK))
-
-			for idx, srv := range servers {
-				if srv.Alive {
-					serverRequestCounts[idx]++
-				}
-			}
+		for i := 0; i < 3; i++ {
+			s, err = startServer()
+			Expect(err).To(BeNil())
+			backendServers = append(backendServers, s)
 		}
-		Expect(serverRequestCounts[0]).To(BeNumerically("~", serverRequestCounts[1]))
-		Expect(serverRequestCounts[1]).To(BeNumerically("~", serverRequestCounts[2]))
+
+		lb = rendezvous.NewRendezvousHashingLoadBalancer(ctx)
+		for _, s = range backendServers {
+			lb.AddServer(s.Host, s.Port)
+		}
+
+		h, p := server.GetHostAndPort()
+		err = lb.Start(ctx, h, p)
+		Expect(err).To(BeNil())
+
+		stopTime := time.Now().Add(10 * time.Second)
+		connectionsSent := 0
+		for time.Now().Before(stopTime) {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+
+				conn, err = net.Dial("tcp", fmt.Sprintf("%s:%d", h, p))
+				Expect(err).To(BeNil())
+				defer conn.Close()
+
+				_, err = conn.Write([]byte("Hello"))
+				Expect(err).To(BeNil())
+
+				buff := make([]byte, 1024)
+				conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+				_, err = conn.Read(buff)
+				Expect(err).To(BeNil())
+				Expect(string(buff)).To(ContainSubstring("Acknowledged"))
+			}(connectionsSent)
+			connectionsSent++
+			time.Sleep(100 * time.Millisecond)
+		}
+
+		wg.Wait()
+		log.Println("All connections processed, now stopping servers and load balancer.")
+
+		totalConnections := 0
+		for _, s := range backendServers {
+			totalConnections += s.Stats.ConnectionsAdded
+		}
+
+		avgConnections := totalConnections / len(backendServers)
+		for _, s := range backendServers {
+			log.Printf("Server %s:%d stats - Connections: %d, Added: %d, Removed: %d",
+				s.Host, s.Port, s.Stats.Connections, s.Stats.ConnectionsAdded, s.Stats.ConnectionsRemoved)
+
+			Expect(s.Stats.ConnectionsAdded).To(BeNumerically(">=", avgConnections-1))
+			Expect(s.Stats.ConnectionsAdded).To(BeNumerically("<=", avgConnections+1))
+		}
 	})
 })
