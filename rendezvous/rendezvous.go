@@ -111,14 +111,16 @@ func (lb *RendezvousHashingLoadBalancer) handleConnection(clientConn *net.TCPCon
 
 // getServer uses rendezvous hashing to choose a backend server
 func (lb *RendezvousHashingLoadBalancer) getServer(key []byte) (*server.DummyServer, error) {
+	var (
+		chosenServer *server.DummyServer
+		err          error
+	)
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
 
 	if len(lb.servers) == 0 {
 		return nil, fmt.Errorf("no servers available")
 	}
-
-	var chosenServer *server.DummyServer
 	maxWeight := big.NewInt(0)
 
 	for _, srv := range lb.servers {
@@ -129,7 +131,7 @@ func (lb *RendezvousHashingLoadBalancer) getServer(key []byte) (*server.DummySer
 		}
 	}
 
-	return chosenServer, nil
+	return chosenServer, err
 }
 
 // computeWeight calculates the weight for a server using its host, port, and the request key
