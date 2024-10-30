@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/rand"
 	"net"
 	"sync"
 	"time"
@@ -95,6 +96,8 @@ func (s *Server) HandleConnection(ctx context.Context, conn *net.TCPConn) {
 	log.Printf("New connection from %s\n", conn.RemoteAddr())
 	s.Stats.Connections++
 	s.Stats.ConnectionsAdded++
+
+	time.Sleep(time.Duration(rand.Intn(10)) * time.Second)
 
 	buffer := make([]byte, 1024)
 	s.wg.Add(1)
