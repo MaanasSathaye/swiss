@@ -75,6 +75,8 @@ var _ = Describe("reservoir.ReservoirLoadBalancer", func() {
 		n, err := conn.Read(buff)
 		Expect(err).To(BeNil())
 		Expect(string(buff[:n])).To(ContainSubstring("Acknowledged"))
+
+		time.Sleep(1 * time.Second)
 	})
 
 	It("should distribute connections randomly across multiple servers", func() {

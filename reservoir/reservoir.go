@@ -46,7 +46,6 @@ func (lb *ReservoirLoadBalancer) getServer() *server.DummyServer {
 	if len(sampled) > 0 {
 		return sampled[0]
 	}
-	// Fallback to random selection if reservoir is empty
 	return lb.servers[rand.Intn(len(lb.servers))]
 }
 
