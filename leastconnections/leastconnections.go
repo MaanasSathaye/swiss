@@ -29,7 +29,7 @@ func NewLeastConnectionsLoadBalancer(ctx context.Context) *LeastConnectionsLoadB
 }
 
 // AddServer adds a backend server to the load balancer's rotation
-func (lb *LeastConnectionsLoadBalancer) AddServer(host string, port, connections int) {
+func (lb *LeastConnectionsLoadBalancer) AddServer(host string, port int, connections int32) {
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
 	lb.servers = append(lb.servers, &server.DummyServer{Host: host, Port: port, Connections: connections})
@@ -40,11 +40,13 @@ func (lb *LeastConnectionsLoadBalancer) getLeastConnectionServer() *server.Dummy
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
 
-	var leastConnServers []*server.DummyServer
-	minConnections := -1
+	var (
+		leastConnServers []*server.DummyServer
+		minConnections   int32 = -1
+	)
 
 	for _, srv := range lb.servers {
-		if minConnections < 0 || srv.Connections < minConnections {
+		if minConnections < 0 || srv.Connections < int32(minConnections) {
 			leastConnServers = []*server.DummyServer{srv}
 			minConnections = srv.Connections
 		} else if srv.Connections == minConnections {

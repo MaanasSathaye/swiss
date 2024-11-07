@@ -163,9 +163,9 @@ var _ = Describe("LeastConnectionsLoadBalancer", func() {
 
 		for _, s := range backendServers {
 			if s.Stats.Connections == 100 {
-				Expect(s.Stats.ConnectionsAdded).To(Equal(0), fmt.Sprintf("Server %s:%d should not have receveived any connections", s.Host, s.Port))
+				Expect(s.Stats.ConnectionsAdded).To(Equal(int32(0)), fmt.Sprintf("Server %s:%d should not have receveived any connections", s.Host, s.Port))
 			} else {
-				Expect(s.Stats.ConnectionsAdded).To(BeNumerically("~", 50, 1), fmt.Sprintf("Server %s:%d should not have significantly more connections than the least loaded server", s.Host, s.Port))
+				Expect(s.Stats.ConnectionsAdded).To(BeNumerically("~", int32(50), 1), fmt.Sprintf("Server %s:%d should not have significantly more connections than the least loaded server", s.Host, s.Port))
 			}
 		}
 	})

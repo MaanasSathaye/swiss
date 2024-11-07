@@ -84,9 +84,10 @@ var _ = Describe("roundrobin.RRLoadBalancer", func() {
 
 	It("should round-robin connections across multiple servers", func() {
 		var (
-			err  error
-			conn net.Conn
-			wg   sync.WaitGroup
+			err              error
+			conn             net.Conn
+			wg               sync.WaitGroup
+			totalConnections int32
 		)
 
 		for i := 0; i < 3; i++ {
@@ -133,12 +134,11 @@ var _ = Describe("roundrobin.RRLoadBalancer", func() {
 		wg.Wait()
 		log.Println("All connections processed, now stopping servers and load balancer.")
 
-		totalConnections := 0
 		for _, s := range backendServers {
 			totalConnections += s.Stats.ConnectionsAdded
 		}
 
-		avgConnections := totalConnections / len(backendServers)
+		avgConnections := totalConnections / int32(len(backendServers))
 		for _, s := range backendServers {
 			log.Printf("Server %s:%d stats - Connections: %d, Added: %d, Removed: %d",
 				s.Host, s.Port, s.Stats.Connections, s.Stats.ConnectionsAdded, s.Stats.ConnectionsRemoved)

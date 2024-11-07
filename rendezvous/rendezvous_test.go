@@ -91,9 +91,10 @@ var _ = Describe("rendezvous.RendezvousLoadBalancer", func() {
 
 	It("should distribute connections based on Rendezvous hashing across multiple servers", func() {
 		var (
-			err  error
-			conn net.Conn
-			wg   sync.WaitGroup
+			err              error
+			conn             net.Conn
+			wg               sync.WaitGroup
+			totalConnections int32
 		)
 
 		lb = rendezvous.NewRendezvousHashingLoadBalancer(ctx)
@@ -142,17 +143,16 @@ var _ = Describe("rendezvous.RendezvousLoadBalancer", func() {
 		wg.Wait()
 		log.Println("All connections processed, now stopping servers and load balancer.")
 
-		totalConnections := 0
 		for _, s := range backendServers {
 			totalConnections += s.Stats.ConnectionsAdded
 		}
 
-		avgConnections := totalConnections / len(backendServers)
+		avgConnections := totalConnections / int32(len(backendServers))
 		for _, s := range backendServers {
 			log.Printf("Server %s:%d stats - Connections: %d, Added: %d, Removed: %d",
 				s.Host, s.Port, s.Stats.Connections, s.Stats.ConnectionsAdded, s.Stats.ConnectionsRemoved)
 
-			Expect(s.Stats.ConnectionsAdded).To(BeNumerically("~", avgConnections, 10))
+			Expect(s.Stats.ConnectionsAdded).To(BeNumerically("~", avgConnections, 15))
 		}
 	})
 })

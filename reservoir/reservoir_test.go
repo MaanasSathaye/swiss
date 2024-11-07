@@ -17,11 +17,12 @@ import (
 
 var _ = Describe("reservoir.ReservoirLoadBalancer", func() {
 	var (
-		lb             *reservoir.ReservoirLoadBalancer
-		srv            *server.Server
-		backendServers []*server.Server
-		err            error
-		s              *server.Server
+		lb               *reservoir.ReservoirLoadBalancer
+		srv              *server.Server
+		backendServers   []*server.Server
+		err              error
+		s                *server.Server
+		totalConnections int32
 	)
 	ctx, done := context.WithTimeout(context.Background(), 15*time.Second)
 	defer done()
@@ -125,7 +126,6 @@ var _ = Describe("reservoir.ReservoirLoadBalancer", func() {
 		wg.Wait()
 		log.Println("All connections processed, now stopping servers and load balancer.")
 
-		totalConnections := 0
 		for _, s := range backendServers {
 			totalConnections += s.Stats.ConnectionsAdded
 		}

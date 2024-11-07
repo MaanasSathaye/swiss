@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/MaanasSathaye/swiss/stats"
@@ -15,7 +16,7 @@ import (
 type DummyServer struct {
 	Host        string
 	Port        int
-	Connections int
+	Connections int32
 }
 type Server struct {
 	Alive    bool
@@ -93,11 +94,13 @@ func (s *Server) HandleConnection(ctx context.Context, conn *net.TCPConn) {
 	defer conn.Close()
 
 	log.Printf("New connection from %s\n", conn.RemoteAddr())
-	s.Stats.Connections++
-	s.Stats.ConnectionsAdded++
+	// s.Stats.Connections++
+	// s.Stats.ConnectionsAdded++
+	atomic.AddInt32(&s.Stats.Connections, 1)
+	atomic.AddInt32(&s.Stats.ConnectionsAdded, 1)
 
 	// time.Sleep(time.Duration(rand.Intn(10)) * time.Second)
-	time.Sleep(5 * time.Second)
+	// time.Sleep(5 * time.Second)
 
 	buffer := make([]byte, 1024)
 	s.wg.Add(1)
@@ -119,8 +122,8 @@ func (s *Server) HandleConnection(ctx context.Context, conn *net.TCPConn) {
 			log.Printf("Error writing to connection: %v\n", err)
 			return
 		}
-		s.Stats.Connections--
-		s.Stats.ConnectionsRemoved++
+		atomic.AddInt32(&s.Stats.Connections, -1)
+		atomic.AddInt32(&s.Stats.ConnectionsRemoved, 1)
 		s.Stats.UpdatedAt = time.Now()
 	}
 }

@@ -7,9 +7,9 @@ import (
 
 // https://github.com/ThePrimeagen/vim-arcade/blob/8c99725866086cf2797973db37d65573c9674d39/pkg/game-server-stats/stats.go
 type ConnectionStats struct {
-	Connections        int
-	ConnectionsAdded   int
-	ConnectionsRemoved int
+	Connections        int32
+	ConnectionsAdded   int32
+	ConnectionsRemoved int32
 	Load               float32
 	UpdatedAt          time.Time
 }

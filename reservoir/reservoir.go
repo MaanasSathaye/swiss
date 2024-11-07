@@ -32,7 +32,7 @@ func NewReservoirLoadBalancer(ctx context.Context, k int) *ReservoirLoadBalancer
 }
 
 // AddServer adds a backend server to the reservoir
-func (lb *ReservoirLoadBalancer) AddServer(host string, port, connections int) {
+func (lb *ReservoirLoadBalancer) AddServer(host string, port int, connections int32) {
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
 	lb.servers = append(lb.servers, &server.DummyServer{Host: host, Port: port, Connections: connections})
