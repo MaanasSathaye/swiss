@@ -22,41 +22,28 @@ type ReservoirLoadBalancer struct {
 	wg        sync.WaitGroup
 }
 
-// NewReservoirLoadBalancer initializes a new reservoir sampling-based load balancer
-func NewReservoirLoadBalancer(ctx context.Context, k int) *ReservoirLoadBalancer {
+func NewReservoirLoadBalancer(ctx context.Context) *ReservoirLoadBalancer {
 	return &ReservoirLoadBalancer{
-		servers:   []*server.DummyServer{},
-		reservoir: New[*server.DummyServer](k),
-		stopChan:  make(chan struct{}),
+		servers:  []*server.DummyServer{},
+		stopChan: make(chan struct{}),
 	}
 }
 
-// AddServer adds a backend server to the reservoir
 func (lb *ReservoirLoadBalancer) AddServer(host string, port int, connections int32) {
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
 	lb.servers = append(lb.servers, &server.DummyServer{Host: host, Port: port, Connections: connections})
+	lb.reservoir = New[*server.DummyServer](len(lb.servers))
 }
 
-// getServer selects a server using reservoir sampling
 func (lb *ReservoirLoadBalancer) getServer() *server.DummyServer {
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
-	sampled := lb.reservoir.Sample(lb.servers...)
-	if len(sampled) > 0 {
-		return sampled[0]
-	}
-	return lb.servers[rand.Intn(len(lb.servers))]
+	return lb.reservoir.Sample(lb.servers...)
 }
 
-// Start begins accepting TCP connections for load balancing with reservoir sampling
 func (lb *ReservoirLoadBalancer) Start(ctx context.Context, host string, port int) error {
-	var (
-		err  error
-		addr *net.TCPAddr
-		conn *net.TCPConn
-	)
-	addr, err = net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%d", host, port))
+	addr, err := net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%d", host, port))
 	if err != nil {
 		return err
 	}
@@ -74,7 +61,7 @@ func (lb *ReservoirLoadBalancer) Start(ctx context.Context, host string, port in
 			case <-lb.stopChan:
 				return
 			default:
-				conn, err = lb.listener.AcceptTCP()
+				conn, err := lb.listener.AcceptTCP()
 				if err != nil {
 					continue
 				}
@@ -87,7 +74,6 @@ func (lb *ReservoirLoadBalancer) Start(ctx context.Context, host string, port in
 	return nil
 }
 
-// handleConnection manages the connection between client and backend server using reservoir sampling
 func (lb *ReservoirLoadBalancer) handleConnection(clientConn *net.TCPConn) {
 	defer clientConn.Close()
 
@@ -98,8 +84,8 @@ func (lb *ReservoirLoadBalancer) handleConnection(clientConn *net.TCPConn) {
 		log.Printf("Failed to connect to backend server %s: %v", backendAddr, err)
 		return
 	}
+	defer backendConn.Close()
 
-	// Bi-directional copy
 	wg := sync.WaitGroup{}
 	wg.Add(2)
 
@@ -116,7 +102,6 @@ func (lb *ReservoirLoadBalancer) handleConnection(clientConn *net.TCPConn) {
 	wg.Wait()
 }
 
-// Stop shuts down the reservoir load balancer gracefully
 func (lb *ReservoirLoadBalancer) Stop() {
 	close(lb.stopChan)
 	if lb.listener != nil {
@@ -126,48 +111,34 @@ func (lb *ReservoirLoadBalancer) Stop() {
 	log.Printf("Reservoir load balancer stopped.")
 }
 
-type Option[T any] func(*Reservoir[T])
-
-func OptionTest[T any](r *Reservoir[T]) {
-	r.gen = rand.New(rand.NewSource(0))
-}
-
-func New[T any](k int, options ...Option[T]) Reservoir[T] {
-	r := Reservoir[T]{
-		position: 0,
-		sampled:  make([]T, 0, k),
-		k:        k,
-		gen:      rand.New(rand.NewSource(time.Now().Unix())),
+func New[T any](k int) Reservoir[T] {
+	return Reservoir[T]{
+		sampled: make([]T, 0, k),
+		k:       k,
+		gen:     rand.New(rand.NewSource(time.Now().Unix())),
 	}
-
-	for _, opt := range options {
-		opt(&r)
-	}
-
-	return r
 }
 
 type Reservoir[T any] struct {
-	sampled  []T
-	position int
-	k        int
-	gen      *rand.Rand
+	sampled []T
+	k       int
+	gen     *rand.Rand
 }
 
-func (t *Reservoir[T]) Sample(items ...T) []T {
+func (r *Reservoir[T]) Sample(items ...T) T {
+	r.sampled = r.sampled[:0]
 	for idx, i := range items {
-		pos := t.position + idx
-		if pos < t.k {
-			t.sampled = append(t.sampled, i)
+		if idx < r.k {
+			r.sampled = append(r.sampled, i)
 			continue
 		}
-
-		j := t.gen.Intn(pos + 1)
-		if j < t.k {
-			t.sampled[j] = i
+		j := r.gen.Intn(idx + 1)
+		if j < r.k {
+			r.sampled[j] = i
 		}
 	}
-	t.position += len(items)
-
-	return t.sampled
+	if len(r.sampled) > 0 {
+		return r.sampled[r.gen.Intn(len(r.sampled))]
+	}
+	return items[r.gen.Intn(len(items))]
 }

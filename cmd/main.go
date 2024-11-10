@@ -322,7 +322,7 @@ func rs(wg *sync.WaitGroup) {
 		backendServers = append(backendServers, s)
 	}
 
-	lb := reservoir.NewReservoirLoadBalancer(ctx, 3)
+	lb := reservoir.NewReservoirLoadBalancer(ctx)
 	for _, s = range backendServers {
 		lb.AddServer(s.Host, s.Port, s.Stats.Connections)
 	}

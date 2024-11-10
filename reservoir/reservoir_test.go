@@ -47,7 +47,7 @@ var _ = Describe("reservoir.ReservoirLoadBalancer", func() {
 	})
 
 	It("should start and stop the load balancer successfully", func() {
-		lb = reservoir.NewReservoirLoadBalancer(ctx, 3)
+		lb = reservoir.NewReservoirLoadBalancer(ctx)
 		h, p := server.GetHostAndPort()
 		err := lb.Start(ctx, h, p)
 		Expect(err).To(BeNil())
@@ -59,7 +59,7 @@ var _ = Describe("reservoir.ReservoirLoadBalancer", func() {
 		srv, err = startServer()
 		Expect(err).To(BeNil())
 
-		lb = reservoir.NewReservoirLoadBalancer(ctx, 1)
+		lb = reservoir.NewReservoirLoadBalancer(ctx)
 		lb.AddServer(srv.Host, srv.Port, s.Stats.Connections)
 		h, p := server.GetHostAndPort()
 		err = lb.Start(ctx, h, p)
@@ -87,7 +87,7 @@ var _ = Describe("reservoir.ReservoirLoadBalancer", func() {
 			backendServers = append(backendServers, s)
 		}
 
-		lb = reservoir.NewReservoirLoadBalancer(ctx, 3)
+		lb = reservoir.NewReservoirLoadBalancer(ctx)
 		for _, s = range backendServers {
 			lb.AddServer(s.Host, s.Port, s.Stats.Connections)
 		}
@@ -96,7 +96,7 @@ var _ = Describe("reservoir.ReservoirLoadBalancer", func() {
 		err = lb.Start(ctx, h, p)
 		Expect(err).To(BeNil())
 
-		stopTime := time.Now().Add(10 * time.Second)
+		stopTime := time.Now().Add(30 * time.Second)
 		connectionsSent := 0
 		wg := sync.WaitGroup{}
 		for time.Now().Before(stopTime) {
